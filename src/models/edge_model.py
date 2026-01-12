@@ -1,6 +1,6 @@
-# Lightweight LLM wrapper (e.g., Phi-3-mini)
 import logging
 import torch
+import re
 from typing import Dict, Any, List, Tuple, Optional
 from transformers import (
     AutoModelForCausalLM,
@@ -41,16 +41,18 @@ class EdgeModel:
         )
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
+        # FIX: Explicitly disable use_cache to avoid DynamicCache attribute errors
         self.model = AutoModelForCausalLM.from_pretrained(
             self.cfg.edge_model_name,
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16,
             trust_remote_code=True,
-            low_cpu_mem_usage=True
+            low_cpu_mem_usage=True,
+            use_cache=False 
         )
+        self.model.config.use_cache = False
 
-        # Put model in eval mode + no grad
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
@@ -72,7 +74,6 @@ Explain your reasoning clearly, then give your final answer as "Final Answer: X"
 where X is the number of the correct choice (1-{len(choices)}).
 """
         else:
-            # For open-ended or GSM8K style
             prompt = f"""You are a helpful and truthful reasoning assistant.
 Question: {question}
 
@@ -88,7 +89,7 @@ At the end, box your final answer with \\boxed{{your answer}}.
         temperature: Optional[float] = None,
         return_confidence: bool = True
     ) -> Dict[str, Any]:
-        """Generate response + basic confidence (per-token avg prob)"""
+        """Generate response + efficiency extraction of confidence"""
         max_new = max_new_tokens or self.cfg.max_new_tokens
         temp = temperature or self.cfg.temperature
 
@@ -113,42 +114,28 @@ At the end, box your final answer with \\boxed{{your answer}}.
                 **inputs,
                 generation_config=generation_config,
                 return_dict_in_generate=True,
-                output_scores=False,           # Fixed - avoids DynamicCache error
-                output_attentions=False,
+                output_scores=return_confidence, # Get scores for confidence calc
             )
 
         generated_ids = outputs.sequences[0, inputs.input_ids.shape[1]:]
         response = self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
         confidence = None
-        if return_confidence and len(generated_ids) > 0:
-            try:
-                input_ids = inputs.input_ids
-                past_key_values = None
-                logprobs = []
-
-                for i in range(len(generated_ids)):
-                    model_outputs = self.model(
-                        input_ids=input_ids,
-                        past_key_values=past_key_values,
-                        use_cache=True,
-                        return_dict=True
-                    )
-                    logits = model_outputs.logits[:, -1, :]
-                    next_token = generated_ids[i].unsqueeze(0).unsqueeze(0)
-                    logprob = torch.log_softmax(logits, dim=-1).gather(1, next_token).item()
-                    logprobs.append(logprob)
-
-                    past_key_values = model_outputs.past_key_values
-                    input_ids = next_token
-
-                if logprobs:
-                    avg_logprob = sum(logprobs) / len(logprobs)
-                    confidence = float(torch.exp(torch.tensor(avg_logprob)).item())
-                else:
-                    confidence = 0.5
-            except Exception as e:
-                logger.warning(f"Confidence calc failed: {e}")
+        if return_confidence and "scores" in outputs:
+            # Efficiently calculate confidence using the scores from the generation
+            # log_softmax converts logits to log-probabilities
+            probs = [torch.log_softmax(score, dim=-1) for score in outputs.scores]
+            
+            logprobs = []
+            for i, token_id in enumerate(generated_ids):
+                # Extract the logprob of the specific token that was actually chosen
+                logprob = probs[i][0, token_id].item()
+                logprobs.append(logprob)
+            
+            if logprobs:
+                avg_logprob = sum(logprobs) / len(logprobs)
+                confidence = float(torch.exp(torch.tensor(avg_logprob)).item())
+            else:
                 confidence = 0.5
 
         return {
@@ -170,18 +157,12 @@ At the end, box your final answer with \\boxed{{your answer}}.
             return_confidence=True
         )
 
-        # Simple extraction of final choice
         final_choice = None
         if "Final Answer:" in result["response"]:
             tail = result["response"].split("Final Answer:")[-1].strip()
-            try:
-                # Try to get the first number after "Final Answer:"
-                import re
-                match = re.search(r'\d+', tail)
-                if match:
-                    final_choice = int(match.group())
-            except:
-                pass
+            match = re.search(r'\d+', tail)
+            if match:
+                final_choice = int(match.group())
 
         correct_choice_1based = example["correct_idx"] + 1 if example["correct_idx"] >= 0 else None
 
@@ -194,11 +175,11 @@ At the end, box your final answer with \\boxed{{your answer}}.
             "is_correct": final_choice == correct_choice_1based if final_choice is not None else False,
         }
 
-
-# Keep the test block exactly as it was
+# --- Standard Hydra Test Block ---
 if __name__ == "__main__":
     import hydra
     from omegaconf import OmegaConf
+    # Adjust imports as per your local structure
     from src.data.dataset import get_dataset
 
     @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
@@ -213,35 +194,6 @@ if __name__ == "__main__":
 
         print("\n=== Test Reasoning ===")
         print(f"Question: {example['question'][:150]}...")
-        print(f"Choices (first 3): {example['choices'][:3]}...")
-        print(f"Correct choice (1-based): {example['correct_idx'] + 1}")
-        print(f"Predicted: {result['predicted_choice']}")
-        print(f"Confidence: {result['confidence']:.4f}")
-        print(f"Correct? {result['is_correct']}")
-        print("\nGenerated reasoning (first 400 chars):")
-        print(result['generated_text'][:400] + "...")
-
-    test()
-
-# Quick local test
-if __name__ == "__main__":
-    import hydra
-    from omegaconf import OmegaConf
-    from src.data.dataset import get_dataset
-
-    @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
-    def test(cfg):
-        print(OmegaConf.to_yaml(cfg))
-
-        ds = get_dataset(cfg)
-        example = ds[0]
-
-        model = EdgeModel(cfg)
-        result = model.reason_on_example(example)
-
-        print("\n=== Test Reasoning ===")
-        print(f"Question: {example['question']}")
-        print(f"Choices: {example['choices']}")
         print(f"Correct choice (1-based): {example['correct_idx'] + 1}")
         print(f"Predicted: {result['predicted_choice']}")
         print(f"Confidence: {result['confidence']:.4f}")
