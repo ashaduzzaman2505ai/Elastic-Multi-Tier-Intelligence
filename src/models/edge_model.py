@@ -113,37 +113,34 @@ At the end, box your final answer with \\boxed{{your answer}}.
                 **inputs,
                 generation_config=generation_config,
                 return_dict_in_generate=True,
-                output_scores=False,           # ← Important: avoid scores + DynamicCache issue
+                output_scores=False,           # Fixed - avoids DynamicCache error
                 output_attentions=False,
             )
 
-        # Decode response
         generated_ids = outputs.sequences[0, inputs.input_ids.shape[1]:]
         response = self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
         confidence = None
         if return_confidence and len(generated_ids) > 0:
-            # Safer confidence estimation: average probability of generated tokens
             try:
-                # Re-forward pass to get logprobs of generated tokens
                 input_ids = inputs.input_ids
                 past_key_values = None
                 logprobs = []
 
                 for i in range(len(generated_ids)):
-                    outputs = self.model(
+                    model_outputs = self.model(
                         input_ids=input_ids,
                         past_key_values=past_key_values,
                         use_cache=True,
                         return_dict=True
                     )
-                    logits = outputs.logits[:, -1, :]
+                    logits = model_outputs.logits[:, -1, :]
                     next_token = generated_ids[i].unsqueeze(0).unsqueeze(0)
                     logprob = torch.log_softmax(logits, dim=-1).gather(1, next_token).item()
                     logprobs.append(logprob)
 
-                    past_key_values = outputs.past_key_values
-                    input_ids = next_token  # continue generation
+                    past_key_values = model_outputs.past_key_values
+                    input_ids = next_token
 
                 if logprobs:
                     avg_logprob = sum(logprobs) / len(logprobs)
@@ -151,7 +148,7 @@ At the end, box your final answer with \\boxed{{your answer}}.
                 else:
                     confidence = 0.5
             except Exception as e:
-                logger.warning(f"Confidence calculation failed: {e}")
+                logger.warning(f"Confidence calc failed: {e}")
                 confidence = 0.5
 
         return {
@@ -160,6 +157,71 @@ At the end, box your final answer with \\boxed{{your answer}}.
             "confidence": confidence,
             "generated_tokens": generated_ids.tolist(),
         }
+
+    def reason_on_example(self, example: Dict[str, Any]) -> Dict[str, Any]:
+        """End-to-end reasoning on one TruthfulQA example"""
+        prompt = self.build_prompt(
+            question=example["question"],
+            choices=example["choices"]
+        )
+
+        result = self.generate(
+            prompt=prompt,
+            return_confidence=True
+        )
+
+        # Simple extraction of final choice
+        final_choice = None
+        if "Final Answer:" in result["response"]:
+            tail = result["response"].split("Final Answer:")[-1].strip()
+            try:
+                # Try to get the first number after "Final Answer:"
+                import re
+                match = re.search(r'\d+', tail)
+                if match:
+                    final_choice = int(match.group())
+            except:
+                pass
+
+        correct_choice_1based = example["correct_idx"] + 1 if example["correct_idx"] >= 0 else None
+
+        return {
+            "prompt": prompt,
+            "generated_text": result["response"],
+            "confidence": result.get("confidence", 0.5),
+            "predicted_choice": final_choice,
+            "correct_choice": correct_choice_1based,
+            "is_correct": final_choice == correct_choice_1based if final_choice is not None else False,
+        }
+
+
+# Keep the test block exactly as it was
+if __name__ == "__main__":
+    import hydra
+    from omegaconf import OmegaConf
+    from src.data.dataset import get_dataset
+
+    @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
+    def test(cfg):
+        print(OmegaConf.to_yaml(cfg))
+
+        ds = get_dataset(cfg)
+        example = ds[0]
+
+        model = EdgeModel(cfg)
+        result = model.reason_on_example(example)
+
+        print("\n=== Test Reasoning ===")
+        print(f"Question: {example['question'][:150]}...")
+        print(f"Choices (first 3): {example['choices'][:3]}...")
+        print(f"Correct choice (1-based): {example['correct_idx'] + 1}")
+        print(f"Predicted: {result['predicted_choice']}")
+        print(f"Confidence: {result['confidence']:.4f}")
+        print(f"Correct? {result['is_correct']}")
+        print("\nGenerated reasoning (first 400 chars):")
+        print(result['generated_text'][:400] + "...")
+
+    test()
 
 # Quick local test
 if __name__ == "__main__":
