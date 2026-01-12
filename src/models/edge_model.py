@@ -47,9 +47,9 @@ class EdgeModel:
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16,
-            trust_remote_code=True,
+            trust_remote_code=False,  
             low_cpu_mem_usage=True,
-            use_cache=False 
+            attn_implementation="eager" # <--- Use "eager" if "flash_attention_2" causes issues
         )
         self.model.config.use_cache = False
 
@@ -179,7 +179,6 @@ At the end, box your final answer with \\boxed{{your answer}}.
 if __name__ == "__main__":
     import hydra
     from omegaconf import OmegaConf
-    # Adjust imports as per your local structure
     from src.data.dataset import get_dataset
 
     @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
