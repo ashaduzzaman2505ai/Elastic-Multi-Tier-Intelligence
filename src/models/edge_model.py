@@ -86,9 +86,9 @@ At the end, box your final answer with \\boxed{{your answer}}.
         prompt: str,
         max_new_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        return_logprobs: bool = False
+        return_confidence: bool = True
     ) -> Dict[str, Any]:
-        """Generate response with optional logprobs for confidence"""
+        """Generate response + basic confidence (per-token avg prob)"""
         max_new = max_new_tokens or self.cfg.max_new_tokens
         temp = temperature or self.cfg.temperature
 
@@ -113,24 +113,46 @@ At the end, box your final answer with \\boxed{{your answer}}.
                 **inputs,
                 generation_config=generation_config,
                 return_dict_in_generate=True,
-                output_scores=return_logprobs,
-                output_attentions=False
+                output_scores=False,           # ← Important: avoid scores + DynamicCache issue
+                output_attentions=False,
             )
 
-        # Decode main response
+        # Decode response
         generated_ids = outputs.sequences[0, inputs.input_ids.shape[1]:]
         response = self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
-        # Basic confidence (average logprob of first 5 generated tokens)
         confidence = None
-        if return_logprobs and hasattr(outputs, "scores"):
-            logprobs = []
-            for i in range(min(5, len(outputs.scores))):
-                score = outputs.scores[i][0]  # batch=1
-                next_token = generated_ids[i]
-                logprob = torch.log_softmax(score, dim=-1)[next_token].item()
-                logprobs.append(logprob)
-            confidence = float(torch.mean(torch.tensor(logprobs)).exp().item()) if logprobs else 0.5
+        if return_confidence and len(generated_ids) > 0:
+            # Safer confidence estimation: average probability of generated tokens
+            try:
+                # Re-forward pass to get logprobs of generated tokens
+                input_ids = inputs.input_ids
+                past_key_values = None
+                logprobs = []
+
+                for i in range(len(generated_ids)):
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                        return_dict=True
+                    )
+                    logits = outputs.logits[:, -1, :]
+                    next_token = generated_ids[i].unsqueeze(0).unsqueeze(0)
+                    logprob = torch.log_softmax(logits, dim=-1).gather(1, next_token).item()
+                    logprobs.append(logprob)
+
+                    past_key_values = outputs.past_key_values
+                    input_ids = next_token  # continue generation
+
+                if logprobs:
+                    avg_logprob = sum(logprobs) / len(logprobs)
+                    confidence = float(torch.exp(torch.tensor(avg_logprob)).item())
+                else:
+                    confidence = 0.5
+            except Exception as e:
+                logger.warning(f"Confidence calculation failed: {e}")
+                confidence = 0.5
 
         return {
             "response": response,
@@ -138,37 +160,6 @@ At the end, box your final answer with \\boxed{{your answer}}.
             "confidence": confidence,
             "generated_tokens": generated_ids.tolist(),
         }
-
-    def reason_on_example(self, example: Dict[str, Any]) -> Dict[str, Any]:
-        """End-to-end reasoning on one TruthfulQA example"""
-        prompt = self.build_prompt(
-            question=example["question"],
-            choices=example["choices"]
-        )
-
-        result = self.generate(
-            prompt=prompt,
-            return_logprobs=True  # for hallucination/confidence signal
-        )
-
-        # Simple post-processing to extract final choice (heuristic)
-        final_choice = None
-        if "Final Answer:" in result["response"]:
-            tail = result["response"].split("Final Answer:")[-1].strip()
-            try:
-                final_choice = int(tail.split()[0].strip("()[].,"))
-            except:
-                pass
-
-        return {
-            "prompt": prompt,
-            "generated_text": result["response"],
-            "confidence": result["confidence"],
-            "predicted_choice": final_choice,
-            "correct_choice": example["correct_idx"] + 1 if example["correct_idx"] >= 0 else None,  # 1-based
-            "is_correct": final_choice == (example["correct_idx"] + 1) if final_choice is not None else False,
-        }
-
 
 # Quick local test
 if __name__ == "__main__":
