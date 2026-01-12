@@ -1,0 +1,26 @@
+seed: 42
+device: cuda
+output_dir: ${hydra:runtime.output_dir}
+num_clients: 5
+federated_rounds: 5
+batch_size: 4
+subset_size: 200
+data:
+  dataset_name: truthful_qa
+  split: validation
+  task: multiple_choice
+model:
+  edge_model_name: microsoft/Phi-3-mini-4k-instruct
+  cloud_model_name: meta-llama/Meta-Llama-3-8B-Instruct
+  edge_quantization: 4bit
+  max_new_tokens: 256
+  temperature: 0.7
+federated:
+  learning_rate: 2.0e-05
+  local_epochs: 1
+  communication_tracking: true
+experiment:
+  num_clients: 20
+  federated_rounds: 50
+  batch_size: 16
+  subset_size: null

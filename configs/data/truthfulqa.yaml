@@ -1,0 +1,3 @@
+dataset_name: truthfulqa/truthful_qa
+split: validation
+task: multiple_choice

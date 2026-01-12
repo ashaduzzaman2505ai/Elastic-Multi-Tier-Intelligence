@@ -1,0 +1,3 @@
+learning_rate: 2e-5
+local_epochs: 1
+communication_tracking: true

@@ -1,0 +1,5 @@
+edge_model_name: microsoft/Phi-3-mini-4k-instruct  # Still use Phi-3 on edge even in full
+cloud_model_name: meta-llama/Meta-Llama-3-8B-Instruct
+edge_quantization: 8bit  # Optional higher precision on A100
+max_new_tokens: 512
+temperature: 0.6

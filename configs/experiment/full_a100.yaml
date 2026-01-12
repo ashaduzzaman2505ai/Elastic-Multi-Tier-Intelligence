@@ -1,0 +1,5 @@
+# Full dataset, larger batch, A100
+num_clients: 20
+federated_rounds: 50
+batch_size: 16
+subset_size: null  # null = use full dataset

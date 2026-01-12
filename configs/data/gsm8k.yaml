@@ -1,0 +1,3 @@
+dataset_name: gsm8k
+split: test
+metric: exact_match
