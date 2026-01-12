@@ -52,3 +52,9 @@ elastic-multi-tier-reasoning/
 ├── tests/                          # Unit tests (later)
 └── LICENSE
 ```
+
+## Hugging Face login
+
+```bash
+huggingface-cli login
+```
