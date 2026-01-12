@@ -106,7 +106,7 @@ if __name__ == "__main__":
         ds = get_dataset(cfg)
         print(f"Loaded dataset size: {len(ds)}")
         print("First example keys:", ds[0].keys())
-        # print("First example:")
-        # print(ds[0])
+        print("First example:")
+        print(ds[0])
 
     test()
