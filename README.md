@@ -49,22 +49,22 @@ poetry run python -m scripts.evaluate_hybrid +experiment=full_a100 use_cloud=tru
 
 ```bash
 elastic-multi-tier-reasoning/
-├── .github/workflows/ci.yml   ← optional
+├── .github/workflows/ci.yml   
 ├── README.md
 ├── requirements.txt
-├── pyproject.toml                  # Optional, for poetry if preferred
+├── pyproject.toml                  # Optional, for poetry
 ├── .gitignore
 ├── configs/
 │   ├── config.yaml                 # Main config
 │   ├── data/
-│   │   ├── gsm8k.yaml           # Small dataset, Phi-3-mini, T4-friendly
-│   │   └── truthfulqa.yaml          # Full dataset, larger batch, A100
+│   │   ├── gsm8k.yaml              # Small dataset, Phi-3-mini, T4-friendly
+│   │   └── truthfulqa.yaml         # Full dataset, larger batch, A100
 │   ├── experiment/
 │   │   └── full_a100.yaml
 │   ├── federated/
-│   │   └── default.yaml           # Small dataset, Phi-3-mini, T4-friendly
+│   │   └── default.yaml            # Small dataset, Phi-3-mini, T4-friendly
 │   └── model/
-│       ├── llama3_8b.yaml           # Small dataset, Phi-3-mini, T4-friendly
+│       ├── llama3_8b.yaml          # Small dataset, Phi-3-mini, T4-friendly
 │       └── phi3_mini.yaml          # Full dataset, larger batch, A100
 ├── src/
 │   ├── __init__.py
