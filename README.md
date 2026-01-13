@@ -20,14 +20,21 @@ This repository implements a novel multi-tier AI reasoning system that dynamical
 # Clone & install
 git clone https://github.com/yourusername/elastic-multi-tier-reasoning.git
 cd elastic-multi-tier-reasoning
-pip install -r requirements.txt
+
+# Initialize / Install dependencies
+pip install poetry
+poetry install 
 
 # Run small evaluation (20 examples, no cloud)
-python -m scripts.evaluate_hybrid subset_size=20 use_cloud=false use_wandb=false
+poetry run python -m scripts.evaluate_hybrid subset_size=20 use_cloud=false use_wandb=false
+poetry run python -m scripts.train_federated subset_size=50 num_clients=5 federated_rounds=3
 
+# or
+pip install -r requirements.txt
+python -m scripts.evaluate_hybrid subset_size=20 use_cloud=false use_wandb=false
 # Run federated simulation (small scale)
 python -m scripts.train_federated subset_size=50 num_clients=5 federated_rounds=3
-
+```
 
 ## Repository Structure
 
