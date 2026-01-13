@@ -2,7 +2,7 @@
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
-from src.data.datasets import get_dataset
+from src.data.dataset import get_dataset
 from src.models.edge_model import EdgeModel
 from src.models.cloud_model import CloudModel
 from src.utils.escalation_policy import EscalationPolicy
