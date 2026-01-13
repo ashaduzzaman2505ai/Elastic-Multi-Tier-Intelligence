@@ -95,7 +95,7 @@ class EscalationPolicy:
 if __name__ == "__main__":
     import hydra
     from omegaconf import OmegaConf
-    from src.data.datasets import get_dataset
+    from src.data.dataset import get_dataset
     from src.models.edge_model import EdgeModel
 
     @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
