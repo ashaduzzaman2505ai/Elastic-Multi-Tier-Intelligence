@@ -1,3 +1,0 @@
-- +experiment=full_a100
-- subset_size=1000
-- batch_size=12
