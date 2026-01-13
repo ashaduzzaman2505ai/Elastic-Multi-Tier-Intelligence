@@ -1,5 +1,5 @@
-# Full multi-tier experiment evaluation
 import hydra
+import time
 import torch
 from omegaconf import DictConfig, OmegaConf
 from src.data.dataset import get_dataset
@@ -8,13 +8,18 @@ from src.models.cloud_model import CloudModel
 from src.utils.escalation_policy import EscalationPolicy
 from src.agents.edge_coordinator import EdgeCoordinator
 from src.utils.metrics import MetricsTracker
+from src.utils.logging import setup_logging_and_reproducibility, log_metrics
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
+
+    # Setup logging and reproducibility
+    logger, wandb_run = setup_logging_and_reproducibility(cfg)
 
     ds = get_dataset(cfg)
     logger.info(f"Evaluating on {len(ds)} examples")
@@ -29,6 +34,8 @@ def main(cfg: DictConfig):
 
     for i, example in enumerate(ds):
         logger.info(f"Processing example {i+1}/{len(ds)}")
+
+        start_time_example = time.time()
 
         # Edge reasoning
         edge_result = edge_model.reason_on_example(example)
@@ -49,13 +56,27 @@ def main(cfg: DictConfig):
         # Update metrics
         tracker.update_from_single_example(edge_result, decision, coord_result, cloud_result)
 
+        # Per-example logging
+        per_example_metrics = {
+            "example_idx": i,
+            "accuracy": 1 if edge_result["is_correct"] else 0,
+            "confidence": edge_result["confidence"],
+            "escalation": decision,
+            "latency_ms": (time.time() - start_time_example) * 1000
+        }
+        log_metrics(wandb_run, per_example_metrics, step=i)
+
     tracker.stop()
     final_metrics = tracker.finalize()
 
+    log_metrics(wandb_run, final_metrics)
+
     # Optional: save to file
-    import json
     with open("evaluation_results.json", "w") as f:
         json.dump(final_metrics, f, indent=2)
+
+    if wandb_run:
+        wandb_run.finish()
 
     print("Evaluation complete. Results saved to evaluation_results.json")
 

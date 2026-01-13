@@ -9,9 +9,7 @@ peft>=0.10.0
 sentencepiece
 protobuf
 wandb>=0.16.0
-codecarbon>=2.3.0  # for energy tracking
 omegaconf
 flwr>=1.11.0
 flwr[simulation]>=1.11.0  # optional but useful for local multi-client sim
 codecarbon>=2.7.0
-wandb>=0.16.0  # optional, uncomment if you want cloud logging

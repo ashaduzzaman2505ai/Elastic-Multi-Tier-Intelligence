@@ -14,3 +14,8 @@ federated_rounds: 5
 batch_size: 4
 subset_size: 200
 
+use_wandb: true
+track_energy: true
+reproducibility:
+  deterministic: true
+

@@ -1,4 +1,3 @@
-# Large LLM wrapper (e.g., Llama-3-70B)
 import logging
 import torch
 from typing import Dict, Any, Optional
@@ -9,6 +8,7 @@ from transformers import (
     GenerationConfig
 )
 from omegaconf import DictConfig
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,26 @@ Be extremely precise and evidence-based.
             "confidence": None,  # Cloud confidence can be added later if needed
         }
 
+    def extract_choice_from_text(self, text: str, num_choices: int) -> int | None:
+        import re
+        patterns = [
+            r"VERIFIED FINAL ANSWER:\s*(\d+)",  # our prompt
+            r"answer:\s*(\d+)",                 # common variants
+            r"choice\s*(\d+)",                  # variations
+            r"\b(\d+)\b(?=.*correct)",          # last number before "correct"
+            r"(\d+)"                            # fallback: first number
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                try:
+                    choice = int(match.group(1))
+                    if 1 <= choice <= num_choices:
+                        return choice
+                except:
+                    pass
+        return None
+
     def verify_edge_response(self, edge_result: Dict[str, Any], example: Dict[str, Any]) -> Dict[str, Any]:
         prompt = self.build_verification_prompt(
             edge_response=edge_result["generated_text"],
@@ -120,16 +140,7 @@ Be extremely precise and evidence-based.
 
         result = self.generate(prompt)
 
-        verified_choice = None
-        if "VERIFIED FINAL ANSWER:" in result["response"]:
-            tail = result["response"].split("VERIFIED FINAL ANSWER:")[-1].strip()
-            try:
-                import re
-                match = re.search(r'\d+', tail)
-                if match:
-                    verified_choice = int(match.group())
-            except:
-                pass
+        verified_choice = self.extract_choice_from_text(result["response"], len(example["choices"]))
 
         return {
             "verification_text": result["response"],
