@@ -1,7 +1,6 @@
 # Main entrypoint for federated runs
 import hydra
-# import flwr as fl
-import flower as fl
+import flwr as fl
 from omegaconf import DictConfig, OmegaConf
 from src.federated.client import FederatedEdgeClient
 from src.federated.strategy import FederatedReasoningStrategy

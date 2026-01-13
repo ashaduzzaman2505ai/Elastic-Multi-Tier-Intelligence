@@ -11,3 +11,5 @@ protobuf
 wandb>=0.16.0
 codecarbon>=2.3.0  # for energy tracking
 omegaconf
+flwr>=1.11.0
+flwr[simulation]>=1.11.0  # optional but useful for local multi-client sim
